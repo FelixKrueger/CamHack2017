@@ -29,11 +29,6 @@ sub index_seq{
     warn "Seqs processed: $seqs_processed\n\n";
     open (IN,$file) or die "Failed to open FastA input: $!\n";
 
-    # #  while (<IN>){
-    #	chomp;
-    #	# warn "$_\n"; sleep(1);
-    #   }
-
     my $index_outfile = 'one_seq_only.fa';
     # we are taking the input FastA sequence and use the first sequence as index
     open (INDEX,">",$index_outfile) or die "Failed to write out FastA sequence to >$index_outfile<: $!\n";
@@ -72,10 +67,15 @@ sub index_seq{
     warn "Sequences left over after this process: $count_leftover\n";
 
     print INDEX "$header\n$seq\n";
-    warn "New reference:\n$header\n$seq\n\n"; sleep(1);
+    # warn "New reference:\n$header\n$seq\n\n"; sleep(1);
     close INDEX or die "Failed to close INDEX filehandle: $!\n";
     close REST  or die "Failed to close REST filehandle: $!\n";
-  
+    
+    if ($file =~ /^rest/){
+	unlink $file or die "Couldn't delete $file\n";
+	warn "Successfully deleted file $file\n";
+    }
+    
     # created Last index
     warn "Now creating Last index for this sequence\n";
     
