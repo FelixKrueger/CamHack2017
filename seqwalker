@@ -127,8 +127,8 @@ sub find_best_hit {
     warn "Now reading the aligned MAF file >>>$file<<< produced by Last\n"; sleep(1);
     
     open (my $in, $file) or die "Cannot read file: $!\n";
-    my $outfile = "best_hit_$file";
 
+    my $outfile = "best_hit_$file";
     warn "Writing best alignment output to $outfile\n";
     open (my $out,'>',$outfile) or die "Cannot open out file $outfile: $!";
     
@@ -164,16 +164,17 @@ sub find_best_hit {
 		$highest_score = $current_score;
 		
 		$highest_alignment = $current_alignment;
-		warn "highest score is $highest_score\n";
+		warn "highest score so far is $highest_score\n";
 		$highest_ref_line = $current_ref_line;
 		$highest_query_line = $current_query_line;
 	    }	
 	}
     }
-    #warn "The highest score in $file is $highest_score\n
-    #$highest_alignment\n
-    #$highest_ref_line\n
-    #$highest_query_line\n";
+
+    warn "The highest score in $file is $highest_score\n
+    $highest_alignment\n
+    $highest_ref_line\n
+    $highest_query_line\n\n"; sleep(1);
     
     print $out "$highest_alignment\n$highest_ref_line$highest_query_line";
     close $out or die $!;
