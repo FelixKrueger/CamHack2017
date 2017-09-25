@@ -6,8 +6,14 @@ use strict;
 my $initial_input_seq = 'B6_test.fasta';
 my $seqs_processed = 0;
 
+my $rest_file = 'rest.fa';  
+warn "Initial round\n";
+$rest_file = index_seq($initial_input_seq);
 
-index_seq($initial_input_seq,$seqs_processed);
+for (1..5){
+    warn "Round #$_\n";
+    $rest_file = index_seq($rest_file);
+}
 
 # align();
 # find_best_hit();
@@ -15,32 +21,67 @@ index_seq($initial_input_seq,$seqs_processed);
 # convert_to_bam();
 
 sub index_seq{
-    my ($file,$seqs_processed) = @_;
-    open (IN,$initial_input_seq) or die "Failed to open FastA input: $!\n";
+
+    my ($file) = @_;
+    warn "Using file $file\n";
+    warn "Seqs processed: $seqs_processed\n";
+    $seqs_processed++;
+    warn "Seqs processed: $seqs_processed\n\n";
+    open (IN,$file) or die "Failed to open FastA input: $!\n";
+
+    # #  while (<IN>){
+    #	chomp;
+    #	# warn "$_\n"; sleep(1);
+    #   }
+
+    my $index_outfile = 'one_seq_only.fa';
+    # we are taking the input FastA sequence and use the first sequence as index
+    open (INDEX,">",$index_outfile) or die "Failed to write out FastA sequence to >$index_outfile<: $!\n";
+    
+    my $rest_outfile = "rest_${seqs_processed}.fa";
+    # all subsequent sequences are written back out into a new FastA sequence that is shortened by 1 sequence
+    open (REST,">",$rest_outfile) or die "Failed to write out FastA sequence to >$rest_outfile<: $!\n";
+    warn "Writing all other reads to >>>$rest_outfile<<<\n";
+ 
     my $header;
     my $seq; 
+    
+    $header = <IN>;
+    chomp $header; 
+    warn "Setting header to $header\n";
+    
+    my $count_leftover = 0;
     while (<IN>){
-	chomp; 
+	chomp;
+	
 	if ($_ =~ /^(>.*)/){
-	    last if ($seqs_processed > 0);
-	    $header = $1;
-	    warn "Setting header to $1\n";
-	    $seqs_processed++;
+	    # found next sequence
+	    print REST "$_\n";
+	    $count_leftover++;
+	    while (<IN>){
+		print REST;
+		if ($_ =~ /^(>.*)/){
+		    $count_leftover++;
+		}
+	    }
 	}
 	else{
 	    $seq .= $_;
 	}
     }
-    my $outfile = "one_seq_only.fa";
-    open (INDEX,">",$outfile) or die "Failed to write out FastA sequence: $!\n";
-    print INDEX "$header\n$seq\n";
-    close INDEX or die "Failed to close INDEX filehandle: $!\n";
+    warn "Sequences left over after this process: $count_leftover\n";
 
+    print INDEX "$header\n$seq\n";
+    warn "New reference:\n$header\n$seq\n\n"; sleep(1);
+    close INDEX or die "Failed to close INDEX filehandle: $!\n";
+    close REST  or die "Failed to close REST filehandle: $!\n";
+  
     # created Last index
     warn "Now creating Last index for this sequence\n";
-
-    system ("lastdb -v mydb $outfile");
-    warn "done\n\n";
+    
+    system ("lastdb -v mydb $index_outfile");
+    warn "done\n\n"; # sleep(5);
+    return ($rest_outfile);
     
 }
 
