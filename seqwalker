@@ -15,6 +15,10 @@ my $seqs_processed = 0;
 
 my ($rest_file,$index_file);  
 
+# Storing all read sequences in  data structure of fast access later on
+my %seqs; # data structure holding all sequence IDs and sequences in the run
+store_seqs($initial_input_seq);
+
 
 warn "Initial round\n";
 ($rest_file,$index_file) = process_first_seq_file($initial_input_seq);
@@ -50,10 +54,17 @@ sub do_something_with_best_alignment{
     my $score     = <IN>;
     my $ref_seq   = <IN>;
     my $query_seq = <IN>;
-    
+    chomp $score;
+    chomp $ref_seq;
+    chomp ($query_seq);
+
+    # QUERY
     my (undef,$id,$start,$size,$strand,$src_size,$text) = (split (/\s+/,$query_seq));
+    # REFERENCE
     my (undef,$ref_id,$ref_start,$ref_size,$ref_strand,$ref_src_size,$ref_text) = (split (/\s+/,$ref_seq));
+
     # The start coordinate is 0-based
+    
     # print "QUERY:\n$query_seq\n";
     # print "REFERENCE:\n$ref_seq\n";
     
@@ -62,23 +73,99 @@ sub do_something_with_best_alignment{
     print "Start:\t\t$ref_start\n";
     print "Size:\t\t$ref_size\n";
     print "Strand:\t\t$ref_strand\n";
-    print "Source size:\t$ref_src_size\n\n";
+    print "Source size:\t$ref_src_size\n";
+    print "REF-SEQ:\t\t$ref_text\n\n";
 
     print "QUERY:\n";
     print "ID:\t\t$id\n";
     print "Start:\t\t$start\n";
     print "Size:\t\t$size\n";
     print "Strand:\t\t$strand\n";
-    print "Source size:\t$src_size\n\n";
+    print "Source size:\t$src_size\n";
+    print "QUERY-SEQ:\t\t$text\n\n";
+ 
+    my ($ref_sequence,$query_sequence) = retrieve_sequence_from_original_FastA($ref_id,$id);
+    
+    warn "Full reference sequence so far:\n$ref_sequence\n(length ",length($ref_sequence)," bp)\n\n";
+    warn "Full query sequence:\n$query_sequence\n(length ",length($query_sequence)," bp)\n\n";
+    
+    my $extension = $src_size - $size;
+    #warn "QUERY extends REFERENCE by $extension bp\n";
 
+    my $ext_seq = substr($text,$start,$extension);
+    #warn "Extension is:\t'$ext_seq'\n"; 
   
-
+ 
+    
 }
 
 
 ###############
 ### SUBROUTINES
 ###############
+
+
+sub store_seqs{
+    
+    my $file = shift;
+    warn "Now storing all sequences in the run\n";
+    open (STORE,$file) or die "Failed to read from file $file: $!\n";
+
+    my $id;
+    my $seq;
+    while (<STORE>){
+	chomp;
+	
+	if ($_ =~ /^(>.*)/){
+
+	    unless($id){
+		$id = $_; # first ID
+		$id =~ s/^\>//;
+		next;
+	    }
+	    # storing old sequence
+	    $seqs{$id} = $seq;
+
+	    # setting new seq ID
+	    $seq = '';
+	    $id = $_;
+	    $id =~ s/^\>//;
+	}
+	else{
+	    $seq .= $_;
+	}
+	
+    }
+
+    # storing last sequence
+    $seqs{$id} = $seq;
+    
+    warn "Finished storing sequences (",scalar keys %seqs," in total)\n\n##########\n";
+}
+
+
+sub retrieve_sequence_from_original_FastA{
+
+    foreach my $id (keys %seqs){
+	# warn "'$id'\n"; sleep(1);
+    }
+    
+    my ($ref_id,$query_id) = @_;
+    warn "REF-ID:\n'$ref_id'\nQUERY-ID:\n'$query_id'\n";
+
+    die "$ref_id did not exist \n" unless (exists $seqs{$ref_id});
+    die "$query_id did not exist \n" unless (exists $seqs{$query_id});
+
+    my $ref_seq = $seqs{$ref_id};
+    my $query_seq = $seqs{$query_id};
+
+    # warn "Ref: $ref_seq\n";
+    # warn "Query: $query_seq\n";
+    # warn "Returning now\n\n";
+
+    return ($ref_seq,$query_seq);
+
+}
 
 sub process_first_seq_file{
 
@@ -234,6 +321,7 @@ sub find_best_hit {
     print $out "$highest_alignment\n$highest_ref_line$highest_query_line";
     close $out or die $!;
     return ($outfile);
+
 }
 
 
