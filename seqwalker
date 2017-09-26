@@ -3,38 +3,88 @@ use warnings;
 use strict;
 use Getopt::Long;
 
+# last modified 26 09 2017
+
 my $seqwalker_version = "0.1.0";
 my ($threshold) = process_commandline();
 
 warn "Last alignments will be carried out with an alignment score threshold of $threshold (for -d and -e)\n\n"; sleep(1);
 
-# last modified 25 09 2017
 my $initial_input_seq = 'B6_test.fasta';
 my $seqs_processed = 0;
 
-my $rest_file = 'rest.fa';  
+my ($rest_file,$index_file);  
+
+
 warn "Initial round\n";
-$rest_file = index_seq($initial_input_seq);
+($rest_file,$index_file) = process_first_seq_file($initial_input_seq);
+warn "New rest file:\t$rest_file\nNew index file:\t$index_file\n\n";
+# INDEXING THE FIRST SEQUENCE 
+index_seq($index_file);
 align($rest_file);
-find_best_hit($rest_file);
+my $best_hit_file = find_best_hit($rest_file);
 
-for (1..5){
-    warn "Round #$_\n";
-    $rest_file = index_seq($rest_file);
+do_something_with_best_alignment($best_hit_file);
 
-    align($rest_file); 
-    find_best_hit($rest_file);  
-}
+# eliminate_best_hit_from_FastA($rest_file);
+
+#for (1..5){
+ #   warn "Round #$_\n";
+  #  ($rest_file,$index_file) = process_seq_file($rest_file);
+   # index_seq($index_file);
+    #align($rest_file); 
+   # find_best_hit($rest_file);  #
+#}
 
 
 # filter_alignment_score();
 # convert_to_bam();
 
-sub index_seq{
+sub do_something_with_best_alignment{
 
-    my ($file) = @_;
+    my $file = shift;
+
+    warn "Now working with best alignment file >>>$file<<<\n\n";
+    open (IN,$file) or die "Failed to read from Best alignment file >$file<: $!\n\n";
+
+    my $score     = <IN>;
+    my $ref_seq   = <IN>;
+    my $query_seq = <IN>;
+    
+    my (undef,$id,$start,$size,$strand,$src_size,$text) = (split (/\s+/,$query_seq));
+    my (undef,$ref_id,$ref_start,$ref_size,$ref_strand,$ref_src_size,$ref_text) = (split (/\s+/,$ref_seq));
+    # The start coordinate is 0-based
+    # print "QUERY:\n$query_seq\n";
+    # print "REFERENCE:\n$ref_seq\n";
+    
+    print "REFERENCE:\n";
+    print "ID:\t\t$ref_id\n";
+    print "Start:\t\t$ref_start\n";
+    print "Size:\t\t$ref_size\n";
+    print "Strand:\t\t$ref_strand\n";
+    print "Source size:\t$ref_src_size\n\n";
+
+    print "QUERY:\n";
+    print "ID:\t\t$id\n";
+    print "Start:\t\t$start\n";
+    print "Size:\t\t$size\n";
+    print "Strand:\t\t$strand\n";
+    print "Source size:\t$src_size\n\n";
+
+  
+
+}
+
+
+###############
+### SUBROUTINES
+###############
+
+sub process_first_seq_file{
+
+    my ($file) = shift;
     warn "Using file $file\n";
-    warn "Seqs processed: $seqs_processed\n";
+    # warn "Seqs processed so far: $seqs_processed\n";
     $seqs_processed++;
     warn "Seqs processed: $seqs_processed\n\n";
     open (IN,$file) or die "Failed to open FastA input: $!\n";
@@ -53,14 +103,14 @@ sub index_seq{
     
     $header = <IN>;
     chomp $header; 
-    warn "Setting header to $header\n";
+    # warn "Setting header to $header\n";
     
     my $count_leftover = 0;
     while (<IN>){
 	chomp;
 	
 	if ($_ =~ /^(>.*)/){
-	    # found next sequence
+	    # found next sequence; printing everything else to REST
 	    print REST "$_\n";
 	    $count_leftover++;
 	    while (<IN>){
@@ -74,41 +124,46 @@ sub index_seq{
 	    $seq .= $_;
 	}
     }
-    warn "Sequences left over after this process: $count_leftover\n";
+    warn "Sequences left over after using the first FastA entry: $count_leftover\n";
 
+    # Printing to the INDEX file in FastA format
     print INDEX "$header\n$seq\n";
     # warn "New reference:\n$header\n$seq\n\n"; sleep(1);
+
     close INDEX or die "Failed to close INDEX filehandle: $!\n";
     close REST  or die "Failed to close REST filehandle: $!\n";
     
+    # deleting the previous REST file
     if ($file =~ /^rest/){
 	unlink $file or die "Couldn't delete $file\n";
 	warn "Successfully deleted file $file\n";
     }
-    
+
+    return ($rest_outfile,$index_outfile);    
+}
+
+
+sub index_seq{
+
+    my $file = shift;
     # created Last index
-    warn "Now creating Last index for this sequence\n";
+    warn "Now creating Last index for the sequence file >>>$file<<<\n";
     
-    system ("lastdb mydb $index_outfile");
-    warn "done\n\n"; # sleep(5);
-    return ($rest_outfile);
+    system ("lastdb -v mydb $file");
+    warn "done\n\n";
     
 }
 
 
 sub align {
-    
-    # By default Last will report many alignments. Last-split looks for a unique best alignment for each part of each query.
-    # It will therefore only return the best hit for each alignment, but different parts may be aligned to different places.
-    # Don't use find_best_hit() if last-split is used.
-    
+       
     my $file = shift;
     warn "Now aligning file >>>$file<<< with Last\n"; sleep(1);
     
     $file =~ s/\.fa$//; 
 
-    system ("lastal -e$threshold -d$threshold -P32 -r5 -q20 -a4 -b3 mydb ${file}.fa > ${file}.maf");
-    warn "Finished\n";
+    system ("lastal -T 1 -e$threshold -d$threshold -P32 -r5 -q20 -a4 -b3 mydb ${file}.fa > ${file}.maf");
+    warn "Finished\n\n";
 
 }
 
@@ -178,6 +233,7 @@ sub find_best_hit {
     
     print $out "$highest_alignment\n$highest_ref_line$highest_query_line";
     close $out or die $!;
+    return ($outfile);
 }
 
 
