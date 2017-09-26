@@ -15,6 +15,8 @@ my $seqs_processed = 0;
 
 my ($rest_file,$index_file);  
 
+my $current_reference; # this will store the growing reference sequence
+
 # Storing all read sequences in  data structure of fast access later on
 my %seqs; # data structure holding all sequence IDs and sequences in the run
 store_seqs($initial_input_seq);
@@ -23,23 +25,81 @@ store_seqs($initial_input_seq);
 warn "Initial round\n";
 ($rest_file,$index_file) = process_first_seq_file($initial_input_seq);
 warn "New rest file:\t$rest_file\nNew index file:\t$index_file\n\n";
+
 # INDEXING THE FIRST SEQUENCE 
 index_seq($index_file);
 align($rest_file);
+
 my $best_hit_file = find_best_hit($rest_file);
+($index_file,my $best_seqID) = do_something_with_best_alignment($best_hit_file);
+index_seq($index_file);
+eliminate_best_hit_from_FastA($rest_file,$best_seqID);
 
-do_something_with_best_alignment($best_hit_file);
-
-# eliminate_best_hit_from_FastA($rest_file);
-
-#for (1..5){
- #   warn "Round #$_\n";
+# ready to loop now...
+for (1..5){
+    warn "Round #$_\n";
   #  ($rest_file,$index_file) = process_seq_file($rest_file);
    # index_seq($index_file);
     #align($rest_file); 
    # find_best_hit($rest_file);  #
-#}
+}
 
+sub eliminate_best_hit_from_FastA{
+    
+    
+    my ($rest_file,$best_seqID) = @_;
+    open (IN,$rest_file) or die "Failed to read from rest-sequence file >$rest_file<: $!\n\n";
+    warn "Now eliminating current best sequence from the rest-sequence file >$rest_file< (best seqID: $best_seqID)\n##########\n\n";
+    
+    my $rest_outfile = "rest_${seqs_processed}.fa";
+    open (REST,'>',$rest_outfile) or die "Failed to write to sequence file $rest_outfile\n";    
+    
+    my $id;
+    my $seq;
+    
+    while (<IN>){
+	chomp;
+	# warn "$_\n";
+	if ($_ =~ /^(>.*)/){
+	    
+	    unless($id){
+		$id = $_; # first ID
+		$id =~ s/^\>//;
+		warn "Setting current seqID to $id\n";
+		next;
+	    }
+	    
+	    # deciding what to do with the old sequence
+	    if ($id eq $best_seqID){
+		warn "Removing entry $id!\n";
+		
+		# setting new seq ID
+		$seq = '';
+		$id = $_;
+		$id =~ s/^\>//;
+		warn "Setting current seqID to $id\n";	
+	    }
+	    else{
+		# printing this entry to the new rest_file
+		# warn "keeping this entry\n";	
+		print REST "$id\n$seq\n";
+		
+		# setting new seq ID
+		$seq = '';
+		$id = $_;
+		$id =~ s/^\>//;
+	    }
+	}
+	else{
+	    $seq .= $_;
+	}
+      	
+    }
+    
+    close IN or die "Failed to close INDEX filehandle: $!\n";
+    close REST or die "Failed to close REST filehandle: $!\n";
+    
+}
 
 # filter_alignment_score();
 # convert_to_bam();
@@ -87,15 +147,26 @@ sub do_something_with_best_alignment{
     my ($ref_sequence,$query_sequence) = retrieve_sequence_from_original_FastA($ref_id,$id);
     
     warn "Full reference sequence so far:\n$ref_sequence\n(length ",length($ref_sequence)," bp)\n\n";
+    warn "Current reference\n$current_reference\n\n"; sleep(3);
+    
     warn "Full query sequence:\n$query_sequence\n(length ",length($query_sequence)," bp)\n\n";
     
     my $extension = $src_size - $size;
-    #warn "QUERY extends REFERENCE by $extension bp\n";
+    warn "QUERY extends REFERENCE by $extension bp\n";
 
-    my $ext_seq = substr($text,$start,$extension);
-    #warn "Extension is:\t'$ext_seq'\n"; 
-  
- 
+    my $ext_seq = substr($query_sequence,-$extension,$extension);
+    warn "Extension is:\t'$ext_seq'\n";
+
+    $current_reference .= $ext_seq;
+
+    my $new_fasta_reference = 'new_reference.fa';
+    warn "Writing new current_reference_sequence out to file $new_fasta_reference\n";
+    
+    open(NEW,'>',$new_fasta_reference) or die "Failed to write new reference to a file $new_fasta_reference: $!\n";    
+    print NEW ">new_ref\n$current_reference\n";
+    close (NEW) or die "Failed close filehandle NEW: $!\n";
+    
+    return ($new_fasta_reference,$id);
     
 }
 
@@ -171,9 +242,7 @@ sub process_first_seq_file{
 
     my ($file) = shift;
     warn "Using file $file\n";
-    # warn "Seqs processed so far: $seqs_processed\n";
-    $seqs_processed++;
-    warn "Seqs processed: $seqs_processed\n\n";
+    warn "Seqs processed so far: $seqs_processed\n";
     open (IN,$file) or die "Failed to open FastA input: $!\n";
 
     my $index_outfile = 'one_seq_only.fa';
@@ -215,6 +284,7 @@ sub process_first_seq_file{
 
     # Printing to the INDEX file in FastA format
     print INDEX "$header\n$seq\n";
+    $current_reference = $seq;
     # warn "New reference:\n$header\n$seq\n\n"; sleep(1);
 
     close INDEX or die "Failed to close INDEX filehandle: $!\n";
@@ -225,6 +295,8 @@ sub process_first_seq_file{
 	unlink $file or die "Couldn't delete $file\n";
 	warn "Successfully deleted file $file\n";
     }
+
+    ++$seqs_processed;
 
     return ($rest_outfile,$index_outfile);    
 }
