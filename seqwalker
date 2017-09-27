@@ -6,7 +6,7 @@ use Getopt::Long;
 # last modified 26 09 2017
 
 my $seqwalker_version = "0.1.0";
-my ($threshold) = process_commandline();
+my ($threshold,$verbose) = process_commandline();
 
 warn "Last alignments will be carried out with an alignment score threshold of $threshold (for -d and -e)\n\n"; sleep(1);
 
@@ -33,27 +33,41 @@ align($rest_file);
 my $best_hit_file = find_best_hit($rest_file);
 ($index_file,my $best_seqID) = do_something_with_best_alignment($best_hit_file);
 
-$rest_file = eliminate_best_hit_from_FastA($rest_file,$best_seqID);
-
+($rest_file,my $eoo) = eliminate_best_hit_from_FastA($rest_file,$best_seqID);
+if ($eoo){
+    warn "Reached end of output. Terminating...\n\n";
+    exit;
+}
+warn "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n";
+    
 # ready to loop now...
 for (1..100){
-    warn "Round #$_\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n";sleep(2);
+    warn "Round #$_\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n";sleep(1);
     index_seq($index_file);
     align($rest_file); 
     $best_hit_file = find_best_hit($rest_file);     
     ($index_file,my $best_seqID) = do_something_with_best_alignment($best_hit_file);
-    $rest_file = eliminate_best_hit_from_FastA($rest_file,$best_seqID);
+
+    ($rest_file,my $eoo) = eliminate_best_hit_from_FastA($rest_file,$best_seqID);
+    if ($eoo){
+	warn "Reached end of output. Termining...\n\n";
+	exit;
+    }
+    warn "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n";
 }
 
 sub eliminate_best_hit_from_FastA{
     
    
     my ($rest_file,$best_seqID) = @_;
+
     open (IN,$rest_file) or die "Failed to read from rest-sequence file >$rest_file<: $!\n\n";
-    warn "Now eliminating current best sequence from the rest-sequence file >$rest_file< (best seqID: $best_seqID)\n##########\n\n";
+    warn "Now eliminating current best sequence from the rest-sequence file >$rest_file< (best seqID: $best_seqID)\n\n";
+    my $rest_written_out = 0;
+    my $output_end = 0;
 
     my $rest_outfile = "rest_${seqs_processed}.fa";
-    warn "Writing new REST outfile to $rest_outfile\n";
+    warn "Writing new REST outfile to >$rest_outfile<\n";
     open (REST,'>',$rest_outfile) or die "Failed to write to sequence file $rest_outfile\n";    
     
     my $id;
@@ -65,27 +79,27 @@ sub eliminate_best_hit_from_FastA{
 	if ($_ =~ /^(>.*)/){
 	    
 	    unless($id){
+		$_ =~ s/^\>//;
 		$id = $_; # first ID
-		$id =~ s/^\>//;
-		warn "Setting current seqID to $id\n";
+		$verbose and warn "Setting current seqID to $id\n";
 		next;
 	    }
 	    
 	    # deciding what to do with the old sequence
 	    if ($id eq $best_seqID){
-		warn "Removing entry $id!\n";
+		$verbose and warn "Removing entry $id!\n";
 		
 		# setting new seq ID
 		$seq = '';
 		$id = $_;
 		$id =~ s/^\>//;
-		warn "Setting current seqID to $id\n";	
+		$verbose and warn "Setting current seqID to $id\n";	
 	    }
 	    else{
 		# printing this entry to the new rest_file
 		# warn "keeping this entry\n";	
 		print REST ">$id\n$seq\n";
-		
+		$rest_written_out++;
 		# setting new seq ID
 		$seq = '';
 		$id = $_;
@@ -96,13 +110,26 @@ sub eliminate_best_hit_from_FastA{
 	    $seq .= $_;
 	}
     }
+
     # printing last sequence
-    print REST ">$id\n$seq\n";
+    if (defined $id){
+	if ($id eq $best_seqID){
+	    warn "The sequence that needs to be removed is the only one present!\n\n";   
+	}
+	else{
+	    print REST ">$id\n$seq\n";
+	    $rest_written_out++;
+	}
+    }
     
-    close IN or die "Failed to close INDEX filehandle: $!\n";
+    if ($rest_written_out == 0){
+	$output_end = 1;
+    }
+    
+    close IN or die "Failed to close IN filehandle: $!\n";
     close REST or die "Failed to close REST filehandle: $!\n";
     
-    return ($rest_outfile);
+    return ($rest_outfile,$output_end);
 
 }
 
@@ -252,7 +279,7 @@ sub retrieve_sequence_from_original_FastA{
     }
     
     my ($ref_id,$query_id) = @_;
-    warn "REF-ID:\n'$ref_id'\nQUERY-ID:\n'$query_id'\n";
+    $verbose and warn "REF-ID:\n'$ref_id'\nQUERY-ID:\n'$query_id'\n";
 
     my $ref_seq;
     my $query_seq;
@@ -335,8 +362,6 @@ sub process_first_seq_file{
 	unlink $file or die "Couldn't delete $file\n";
 	warn "Successfully deleted file $file\n";
     }
-
-    # ++$seqs_processed;
 
     return ($rest_outfile,$index_outfile);    
 }
@@ -425,7 +450,7 @@ sub find_best_hit {
 	}
     }
 
-    warn "The highest score in $file is $highest_score\n
+    $verbose and warn "The highest score in $file is $highest_score\n
     $highest_alignment\n
     $highest_ref_line\n
     $highest_query_line\n\n"; # sleep(1);
@@ -536,10 +561,12 @@ sub process_commandline{
     my $help;
     my $threshold;
     my $version;
+    my $verbose;
 
     my $command_line = GetOptions ('help'                => \$help,
                                    'threshold=i'         => \$threshold,
 				   'version'             => \$version,
+				   'verbose'             => \$verbose,
         );
     
     die "Please respecify command line options\n\n" unless ($command_line);
@@ -575,5 +602,9 @@ VERSION
           exit;
     }
 
-    return ($threshold);
+    return ($threshold,$verbose);
+}
+
+sub print_helpfile{
+    warn "Don't worry, help is coming soon....\n";
 }
