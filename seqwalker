@@ -32,25 +32,27 @@ align($rest_file);
 
 my $best_hit_file = find_best_hit($rest_file);
 ($index_file,my $best_seqID) = do_something_with_best_alignment($best_hit_file);
-index_seq($index_file);
-eliminate_best_hit_from_FastA($rest_file,$best_seqID);
+
+$rest_file = eliminate_best_hit_from_FastA($rest_file,$best_seqID);
 
 # ready to loop now...
-for (1..5){
-    warn "Round #$_\n";
-  #  ($rest_file,$index_file) = process_seq_file($rest_file);
-   # index_seq($index_file);
-    #align($rest_file); 
-   # find_best_hit($rest_file);  #
+for (1..20){
+    warn "Round #$_\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n";
+    index_seq($index_file);
+    align($rest_file); 
+    $best_hit_file = find_best_hit($rest_file);     
+    ($index_file,my $best_seqID) = do_something_with_best_alignment($best_hit_file);
+    $rest_file = eliminate_best_hit_from_FastA($rest_file,$best_seqID);
 }
 
 sub eliminate_best_hit_from_FastA{
     
-    
+   
     my ($rest_file,$best_seqID) = @_;
     open (IN,$rest_file) or die "Failed to read from rest-sequence file >$rest_file<: $!\n\n";
     warn "Now eliminating current best sequence from the rest-sequence file >$rest_file< (best seqID: $best_seqID)\n##########\n\n";
     
+
     my $rest_outfile = "rest_${seqs_processed}.fa";
     open (REST,'>',$rest_outfile) or die "Failed to write to sequence file $rest_outfile\n";    
     
@@ -82,7 +84,7 @@ sub eliminate_best_hit_from_FastA{
 	    else{
 		# printing this entry to the new rest_file
 		# warn "keeping this entry\n";	
-		print REST "$id\n$seq\n";
+		print REST ">$id\n$seq\n";
 		
 		# setting new seq ID
 		$seq = '';
@@ -99,6 +101,8 @@ sub eliminate_best_hit_from_FastA{
     close IN or die "Failed to close INDEX filehandle: $!\n";
     close REST or die "Failed to close REST filehandle: $!\n";
     
+    return ($rest_outfile);
+
 }
 
 # filter_alignment_score();
@@ -134,7 +138,7 @@ sub do_something_with_best_alignment{
     print "Size:\t\t$ref_size\n";
     print "Strand:\t\t$ref_strand\n";
     print "Source size:\t$ref_src_size\n";
-    print "REF-SEQ:\t\t$ref_text\n\n";
+    # print "REF-SEQ:\t\t$ref_text\n\n";
 
     print "QUERY:\n";
     print "ID:\t\t$id\n";
@@ -142,21 +146,39 @@ sub do_something_with_best_alignment{
     print "Size:\t\t$size\n";
     print "Strand:\t\t$strand\n";
     print "Source size:\t$src_size\n";
-    print "QUERY-SEQ:\t\t$text\n\n";
+    # print "QUERY-SEQ:\t\t$text\n\n";
  
     my ($ref_sequence,$query_sequence) = retrieve_sequence_from_original_FastA($ref_id,$id);
     
+    my $extension;
+    my $ext_seq;
+
     warn "Full reference sequence so far:\n$ref_sequence\n(length ",length($ref_sequence)," bp)\n\n";
-    warn "Current reference\n$current_reference\n\n"; sleep(3);
-    
     warn "Full query sequence:\n$query_sequence\n(length ",length($query_sequence)," bp)\n\n";
     
-    my $extension = $src_size - $size;
-    warn "QUERY extends REFERENCE by $extension bp\n";
-
-    my $ext_seq = substr($query_sequence,-$extension,$extension);
-    warn "Extension is:\t'$ext_seq'\n";
-
+    if ($strand eq '-'){
+	warn "OMG, reverse alignments! Can't handle this (yet!). Let's try anyway...\n\n";
+	
+	$extension = $src_size - $size;
+	warn "QUERY extends REFERENCE by $extension bp\n";
+	
+	$ext_seq = substr($query_sequence,0,$extension);
+	warn "Extension is:\t'$ext_seq'\n";
+	$ext_seq = rc($ext_seq);
+	warn "Extension is:\t'$ext_seq'\n";
+    }
+    elsif($strand eq '+'){
+	$extension = $src_size - $size;
+	warn "QUERY extends REFERENCE by $extension bp\n";
+	
+	$ext_seq = substr($query_sequence,-$extension,$extension);
+	warn "Extension is:\t'$ext_seq'\n";
+    }
+    else{
+	die "Strand of the alignment was neither + nor -\n";
+    }
+    
+    
     $current_reference .= $ext_seq;
 
     my $new_fasta_reference = 'new_reference.fa';
@@ -164,8 +186,10 @@ sub do_something_with_best_alignment{
     
     open(NEW,'>',$new_fasta_reference) or die "Failed to write new reference to a file $new_fasta_reference: $!\n";    
     print NEW ">new_ref\n$current_reference\n";
-    close (NEW) or die "Failed close filehandle NEW: $!\n";
+    close NEW or die "Failed close filehandle NEW: $!\n";
     
+    ++$seqs_processed;
+
     return ($new_fasta_reference,$id);
     
 }
@@ -214,6 +238,12 @@ sub store_seqs{
     warn "Finished storing sequences (",scalar keys %seqs," in total)\n\n##########\n";
 }
 
+sub rc{ # reverse complements a sequence
+    my $seq = shift;
+    $seq = reverse $seq;
+    $seq =~ tr/CAGT/GTCA/;
+    return $seq;
+}
 
 sub retrieve_sequence_from_original_FastA{
 
@@ -224,16 +254,26 @@ sub retrieve_sequence_from_original_FastA{
     my ($ref_id,$query_id) = @_;
     warn "REF-ID:\n'$ref_id'\nQUERY-ID:\n'$query_id'\n";
 
-    die "$ref_id did not exist \n" unless (exists $seqs{$ref_id});
+    my $ref_seq;
+    my $query_seq;
+ 
+    # if the ref ID does not exist we are simply going to use the sequence stored in $current_reference
+    if (exists $seqs{$ref_id}){
+	$ref_seq = $seqs{$ref_id};
+    }
+    else{
+	warn "$ref_id did not exist, using the sequence stored in \$currrent_reference\n";
+	$ref_seq = $current_reference;
+    }
+    
     die "$query_id did not exist \n" unless (exists $seqs{$query_id});
-
-    my $ref_seq = $seqs{$ref_id};
-    my $query_seq = $seqs{$query_id};
-
-    # warn "Ref: $ref_seq\n";
-    # warn "Query: $query_seq\n";
-    # warn "Returning now\n\n";
-
+    
+    $query_seq = $seqs{$query_id};
+    
+    warn "Ref: $ref_seq\n";
+    warn "Query: $query_seq\n";
+    warn "Returning now\n\n";
+    
     return ($ref_seq,$query_seq);
 
 }
@@ -308,16 +348,16 @@ sub index_seq{
     # created Last index
     warn "Now creating Last index for the sequence file >>>$file<<<\n";
     
-    system ("lastdb -v mydb $file");
+    system ("lastdb mydb $file");
     warn "done\n\n";
     
 }
 
 
 sub align {
-       
+    
     my $file = shift;
-    warn "Now aligning file >>>$file<<< with Last\n"; sleep(1);
+    warn "Now aligning file >>>$file<<< with Last\n";
     
     $file =~ s/\.fa$//; 
 
@@ -338,7 +378,7 @@ sub find_best_hit {
     
     my $file = shift;
     $file =~ s/fa$/maf/;
-    warn "Now reading the aligned MAF file >>>$file<<< produced by Last\n"; sleep(1);
+    warn "Now reading the aligned MAF file >>>$file<<< produced by Last\n"; # sleep(1);
     
     open (my $in, $file) or die "Cannot read file: $!\n";
 
@@ -388,7 +428,7 @@ sub find_best_hit {
     warn "The highest score in $file is $highest_score\n
     $highest_alignment\n
     $highest_ref_line\n
-    $highest_query_line\n\n"; sleep(1);
+    $highest_query_line\n\n"; # sleep(1);
     
     print $out "$highest_alignment\n$highest_ref_line$highest_query_line";
     close $out or die $!;
