@@ -10,7 +10,7 @@ my ($threshold) = process_commandline();
 
 warn "Last alignments will be carried out with an alignment score threshold of $threshold (for -d and -e)\n\n"; sleep(1);
 
-my $initial_input_seq = 'B6_test.fasta';
+my $initial_input_seq = shift @ARGV;
 my $seqs_processed = 0;
 
 my ($rest_file,$index_file);  
@@ -36,8 +36,8 @@ my $best_hit_file = find_best_hit($rest_file);
 $rest_file = eliminate_best_hit_from_FastA($rest_file,$best_seqID);
 
 # ready to loop now...
-for (1..20){
-    warn "Round #$_\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n";
+for (1..100){
+    warn "Round #$_\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n";sleep(2);
     index_seq($index_file);
     align($rest_file); 
     $best_hit_file = find_best_hit($rest_file);     
@@ -51,9 +51,9 @@ sub eliminate_best_hit_from_FastA{
     my ($rest_file,$best_seqID) = @_;
     open (IN,$rest_file) or die "Failed to read from rest-sequence file >$rest_file<: $!\n\n";
     warn "Now eliminating current best sequence from the rest-sequence file >$rest_file< (best seqID: $best_seqID)\n##########\n\n";
-    
 
     my $rest_outfile = "rest_${seqs_processed}.fa";
+    warn "Writing new REST outfile to $rest_outfile\n";
     open (REST,'>',$rest_outfile) or die "Failed to write to sequence file $rest_outfile\n";    
     
     my $id;
@@ -95,8 +95,9 @@ sub eliminate_best_hit_from_FastA{
 	else{
 	    $seq .= $_;
 	}
-      	
     }
+    # printing last sequence
+    print REST ">$id\n$seq\n";
     
     close IN or die "Failed to close INDEX filehandle: $!\n";
     close REST or die "Failed to close REST filehandle: $!\n";
@@ -157,8 +158,7 @@ sub do_something_with_best_alignment{
     warn "Full query sequence:\n$query_sequence\n(length ",length($query_sequence)," bp)\n\n";
     
     if ($strand eq '-'){
-	warn "OMG, reverse alignments! Can't handle this (yet!). Let's try anyway...\n\n";
-	
+	warn "reverse alignment\n";
 	$extension = $src_size - $size;
 	warn "QUERY extends REFERENCE by $extension bp\n";
 	
@@ -270,9 +270,9 @@ sub retrieve_sequence_from_original_FastA{
     
     $query_seq = $seqs{$query_id};
     
-    warn "Ref: $ref_seq\n";
-    warn "Query: $query_seq\n";
-    warn "Returning now\n\n";
+    # warn "Ref: $ref_seq\n";
+    # warn "Query: $query_seq\n";
+    # warn "Returning now\n\n";
     
     return ($ref_seq,$query_seq);
 
@@ -336,7 +336,7 @@ sub process_first_seq_file{
 	warn "Successfully deleted file $file\n";
     }
 
-    ++$seqs_processed;
+    # ++$seqs_processed;
 
     return ($rest_outfile,$index_outfile);    
 }
